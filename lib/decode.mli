@@ -62,6 +62,6 @@ module Make(R : Bits.Reader) : sig
   val decode_block : State.t -> int -> int -> int -> unit
   val decode_blocks : State.t -> int -> int -> unit
   val decode_mb : State.t -> unit
-
+  val decode_picture : State.t -> unit
 end
 
