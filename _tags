@@ -1,0 +1,7 @@
+<lib/*.ml>: for-pack(Oh261), package(ovideo)
+<lib/*.mli>: package(ovideo)
+
+<lib_test/*.byte>: package(ovideo)
+
+<lib>: include
+<lib_test>: include
