@@ -31,15 +31,17 @@ module Bitstream(R : Bits.Reader) = struct
     end
 
   let read_picture_header bits = 
+    let temporal_reference = R.get bits 5 in
+    let split_screen_indicator = R.get bits 1 in
+    let document_camera_indicator = R.get bits 1 in
+    let freeze_picture_release = R.get bits 1 in
+    let source_format = if (R.get bits 1) = 1 then Source_format.Cif else Source_format.Qcif in
+    let hi_res = R.get bits 1 in
+    let spare = R.get bits 1 in
     let picture_header = 
       Picture_header.({
-        temporal_reference = R.get bits 5;
-        split_screen_indicator = R.get bits 1;
-        document_camera_indicator = R.get bits 1;
-        freeze_picture_release = R.get bits 1;
-        source_format = if (R.get bits 1) = 1 then Source_format.Cif else Source_format.Qcif;
-        hi_res = R.get bits 1;
-        spare = R.get bits 1;
+        temporal_reference; split_screen_indicator; document_camera_indicator;
+        freeze_picture_release; source_format; hi_res; spare;
       })
     in
     read_spare bits;
@@ -47,29 +49,25 @@ module Bitstream(R : Bits.Reader) = struct
 
   let read_gob_header bits = 
     find_start_code bits;
-    let gob_header = 
-      Gob_header.({
-        group_number = R.get bits 4;
-        gob_quant = R.get bits 5;
-      }) 
-    in
+    let group_number = R.get bits 4 in
+    let gob_quant = R.get bits 5 in
+    let gob_header = Gob_header.({ group_number; gob_quant; }) in
     read_spare bits;
     gob_header
  
   (* create the codeword lookup tables *)
-  let mba   = Table.lookup Tables.Mba.codes
-  let mtype = Table.lookup Tables.Mtype.codes
-  let cbp   = Table.lookup Tables.Cbp.codes
-  let mvd   = Table.lookup Tables.Mvd.codes
-  let coef  = Table.lookup Tables.Coef.codes
+  let mba   = "mba", Table.lookup Tables.Mba.codes
+  let mtype = "mtype", Table.lookup Tables.Mtype.codes
+  let cbp   = "cbp", Table.lookup Tables.Cbp.codes
+  let mvd   = "mvd", Table.lookup Tables.Mvd.codes
+  let coef  = "coef", Table.lookup Tables.Coef.codes
 
-  exception No_valid_codeword
+  exception No_valid_codeword of string * int
 
-  let lookup_code bits table = 
-    let table, max_bits = table in
+  let lookup_code bits (name,(table,max_bits)) = 
     let code = R.show bits max_bits in
     match table.(code) with
-    | None -> raise No_valid_codeword
+    | None -> raise (No_valid_codeword (name, code))
     | Some(l,c) -> begin
       R.advance bits l;
       c
@@ -85,7 +83,7 @@ module Bitstream(R : Bits.Reader) = struct
         if coef.escape then
           let run = R.get bits 6 in
           let level = R.get bits 8 in
-          let level = if (level land (1 lsl 7)) <> 0 then level lor 0xFFFFFF00 else level in
+          let level = if (level land (1 lsl 7)) <> 0 then level lor ((-1) lsl 8) else level in
           (false, run, level)
         else
           let sign = if R.get bits 1 = 0 then 1 else -1 in
@@ -105,7 +103,6 @@ module Bitstream(R : Bits.Reader) = struct
           get_coef()
     else
       get_coef()
-
 
 end
 
@@ -128,8 +125,8 @@ module Recon = struct
   let copy ~x ~y ~ref ~cur = begin
     Frame.U8.(Plane.blit ~x ~y ~w:16 ~h:16 ~dx:x ~dy:y ref.y cur.y);
     let x,y = x/2, y/2 in
-    Frame.U8.(Plane.blit ~x ~y ~w:16 ~h:16 ~dx:x ~dy:y ref.u cur.u);
-    Frame.U8.(Plane.blit ~x ~y ~w:16 ~h:16 ~dx:x ~dy:y ref.v cur.v)
+    Frame.U8.(Plane.blit ~x ~y ~w:8 ~h:8 ~dx:x ~dy:y ref.u cur.u);
+    Frame.U8.(Plane.blit ~x ~y ~w:8 ~h:8 ~dx:x ~dy:y ref.v cur.v)
   end
 
   let intra ~x ~y ~pred ~cur = 
@@ -165,7 +162,7 @@ module Recon = struct
       (* horz filter *)
       for j=0 to 7 do
         fil2.{j,0} <- 4 * fil1.{j,0};
-        for i=0 to 6 do
+        for i=1 to 6 do
           fil2.{j,i} <- fil1.{j,i-1} + (2 * fil1.{j,i}) + fil1.{j,i+1}
         done;
         fil2.{j,7} <- 4 * fil1.{j,7}
@@ -173,7 +170,7 @@ module Recon = struct
       (* vert filter *)
       for i=0 to 7 do
         fil1.{0,i} <- 4 * fil2.{0,i};
-        for j=0 to 6 do
+        for j=1 to 6 do
           fil1.{j,i} <- fil2.{j-1,i} + (2 * fil2.{j,i}) + fil2.{j+1,i}
         done;
         fil1.{7,i} <- 4 * fil2.{7,i}
@@ -285,16 +282,18 @@ module Make(R : Bits.Reader) = struct
           let zx,zy = Zigzag.inv2d.(pos) in
           s.cofs.{zy,zx} <- Quant.inv s.quant level
       end;
-      decode_coefs s false pos
+      decode_coefs s false (pos+1)
     end
 
   (* copy skipped macroblocks *)
   let rec copy_skipped_mbs s last = 
+    s.mba <- s.mba + 1;
     if s.mba >= last then ()
     else
       let x,y = mb_to_pos s.gob_header.Gob_header.group_number s.mba in
+      let () = Printf.eprintf "skip %i %i [%i,%i]\n" s.mba 
+        s.gob_header.Gob_header.group_number x y in
       Recon.copy ~x:(x*16) ~y:(y*16) ~ref:s.ref ~cur:s.cur;
-      s.mba <- s.mba + 1;
       copy_skipped_mbs s last
 
   let compute_mvs s x = 
@@ -314,6 +313,14 @@ module Make(R : Bits.Reader) = struct
       s.mvy <- 0
     end
 
+  (*let dump d = 
+    for j=0 to 7 do
+      for i=0 to 7 do
+        Printf.eprintf "%6i " d.{j,i}
+      done;
+      Printf.eprintf "\n"
+    done*)
+
   let decode_block s i x y = 
     let open Tables.Mtype in
     let cur, ref, bs, ox, oy, mvx, mvy = get_block s i in
@@ -321,8 +328,11 @@ module Make(R : Bits.Reader) = struct
     if s.cbp land (1 lsl (5-i)) = 0 then
       Recon.skip ~x ~y ~mvx ~mvy ~cur ~ref
     else begin
+      Frame.SInt.Plane.clear s.cofs 0;
       decode_coefs s true 0;
+      (*dump s.cofs;*)
       Dct.Chen.idct s.cofs s.cofs;
+      (*dump s.cofs;*)
       if s.mtype.intra then 
         Recon.intra ~x ~y ~pred:s.cofs ~cur
       else if s.mtype.fil then
@@ -346,6 +356,10 @@ module Make(R : Bits.Reader) = struct
     copy_skipped_mbs s (s.mba + s.mbadiff);
     (* get mb position *)
     let x, y = mb_to_pos s.gob_header.Gob_header.group_number s.mba in
+    (*Printf.eprintf "[%i,%i] gob=%i mb=%i\n" x y 
+      s.gob_header.Gob_header.group_number s.mba;
+    Printf.eprintf "  mtype=%s\n" 
+      (Tables.Mtype.Show_t.show s.mtype);*)
     (* compute motion vectors *)
     compute_mvs s x;
     (* decode each block *)
@@ -369,24 +383,34 @@ module Make(R : Bits.Reader) = struct
     s.ref <- cur 
 
   let decode_picture s = 
+    let open Gob_header in
     B.find_picture_start_code s.bits;
     s.picture_header <- B.read_picture_header s.bits;
+    (*Printf.eprintf "picture_header= = %s\n" (Picture_header.Show_t.show s.picture_header);*)
     config_frame s;
+    s.gob_header <- { group_number=0; gob_quant=8 }; (* default header *)
     swap s;
+    let complete_gob () = 
+      if s.gob_header.group_number <> 0 then 
+        copy_skipped_mbs s 34
+    in
     let rec loop () = 
       let code = R.show s.bits 20 in
       if code = 16 then begin
         (* PSC, done *)
-        copy_skipped_mbs s 33
+        complete_gob () (* complete previous gob *)
       end else if (code lsr 4) = 1 then begin
         (* GSC *)
-        (*copy_skipped_mbs s 33; (* ??? *)*)
+        complete_gob (); (* complete previous gob *)
         s.gob_header <- B.read_gob_header s.bits;
-        s.quant <- s.gob_header.Gob_header.gob_quant;
+        (*Printf.eprintf "gob_header = %s\n" (Gob_header.Show_t.show s.gob_header);*)
+        s.quant <- s.gob_header.gob_quant;
         s.mba <- 0;
+        loop();
       end else if (code lsr 9) = 15 then begin
         (* stuffing *)
-        R.advance s.bits 11; loop();
+        R.advance s.bits 11; 
+        loop();
       end else begin
         (* macroblock *)
         decode_mb s; loop ()

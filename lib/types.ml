@@ -1,7 +1,8 @@
 module Source_format = struct
   type t = 
     | Qcif 
-    | Cif
+    | Cif 
+    deriving(Show)
 end
 
 module Picture_header = struct
@@ -14,7 +15,7 @@ module Picture_header = struct
       source_format : Source_format.t;
       hi_res : int;
       spare : int;
-    }
+    } deriving(Show)
   let empty = 
     {
       temporal_reference = 0;
@@ -32,7 +33,7 @@ module Gob_header = struct
     {
       group_number : int;
       gob_quant : int;
-    }
+    } deriving(Show)
   let empty = 
     {
       group_number = 0;
@@ -49,9 +50,11 @@ let frame_dims = function
   | Source_format.Cif -> 352, 288
   
 let mb_to_pos gob mb = 
-  assert (mb < 33);
+  assert (mb > 0);
+  assert (mb <= 33);
   assert (gob <= 12);
-  let y = ((gob / 2) * 3) + (mb / 11) in
+  let mb = mb - 1 in
+  let y = (((gob-1) / 2) * 3) + (mb / 11) in
   let x = (mb mod 11) + (if (gob land 1) = 0 then 11 else 0) in
   (x,y)
 

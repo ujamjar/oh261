@@ -7,7 +7,7 @@ module Bitstream(R : Bits.Reader) : sig
   val read_spare : R.t -> unit
   val read_picture_header : R.t -> Picture_header.t
   val read_gob_header : R.t -> Gob_header.t
-  val lookup_code : R.t -> 'a Table.table * int -> 'a
+  val lookup_code : R.t -> string * ('a Table.table * int) -> 'a
   val lookup_coef : R.t -> bool -> bool -> bool * int * int
 end
 

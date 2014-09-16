@@ -2,6 +2,7 @@ module Source_format : sig
   type t = 
     | Qcif 
     | Cif
+    deriving(Show)
 end
 
 module Picture_header : sig
@@ -14,7 +15,7 @@ module Picture_header : sig
       source_format : Source_format.t;
       hi_res : int;
       spare : int;
-    }
+    } deriving(Show)
     val empty : t
 end
 
@@ -23,7 +24,7 @@ module Gob_header : sig
     {
       group_number : int;
       gob_quant : int;
-    }
+    } deriving(Show)
     val empty : t
 end
 
