@@ -46,7 +46,7 @@ module Make(R : Bits.Reader) : sig
         mutable cbp : int;
         mutable quant : int;
         mutable cofs : Frame.SInt.Plane.t;
-        mutable mtype : Tables.Mtype.t;
+        mutable mtype : Mtype.t;
       }
     val init : R.t -> t
   end

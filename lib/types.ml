@@ -8,37 +8,49 @@ end
 module Picture_header = struct
   type t = 
     {
-      temporal_reference : int;
-      split_screen_indicator : int;
-      document_camera_indicator : int;
-      freeze_picture_release : int;
-      source_format : Source_format.t;
-      hi_res : int;
-      spare : int;
+      mutable temporal_reference : int;
+      mutable split_screen_indicator : bool;
+      mutable document_camera_indicator : bool;
+      mutable freeze_picture_release : bool;
+      mutable source_format : Source_format.t;
+      mutable hi_res : bool;
+      mutable spare : bool;
     } deriving(Show)
   let empty = 
     {
       temporal_reference = 0;
-      split_screen_indicator = 0;
-      document_camera_indicator = 0;
-      freeze_picture_release = 0;
+      split_screen_indicator = false;
+      document_camera_indicator = false;
+      freeze_picture_release = false;
       source_format = Source_format.Qcif;
-      hi_res = 0;
-      spare = 0;
+      hi_res = false;
+      spare = false;
     }
 end
 
 module Gob_header = struct
   type t = 
     {
-      group_number : int;
-      gob_quant : int;
+      mutable group_number : int;
+      mutable gob_quant : int;
     } deriving(Show)
   let empty = 
     {
       group_number = 0;
       gob_quant = 0;
     }
+end
+
+module Mtype = struct
+  type t = 
+    {
+      mutable intra : bool;
+      mutable fil : bool;
+      mutable quant : bool;
+      mutable mvd : bool;
+      mutable cbp : bool;
+      mutable coef : bool;
+    } 
 end
 
 let num_gobs = function
@@ -58,5 +70,10 @@ let mb_to_pos gob mb =
   let x = (mb mod 11) + (if (gob land 1) = 0 then 11 else 0) in
   (x,y)
 
+let alloc_frame = 
+  let open Ovideo.Frame.U8 in
+  function
+  | Source_format.Qcif -> make ~chroma:C420 ~w:176 ~h:144
+  | Source_format.Cif -> make ~chroma:C420 ~w:352 ~h:288
 
 

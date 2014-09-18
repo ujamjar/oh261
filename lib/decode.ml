@@ -30,14 +30,16 @@ module Bitstream(R : Bits.Reader) = struct
       read_spare bits
     end
 
+  let get_bool bits = R.get bits 1 = 1
+
   let read_picture_header bits = 
     let temporal_reference = R.get bits 5 in
-    let split_screen_indicator = R.get bits 1 in
-    let document_camera_indicator = R.get bits 1 in
-    let freeze_picture_release = R.get bits 1 in
-    let source_format = if (R.get bits 1) = 1 then Source_format.Cif else Source_format.Qcif in
-    let hi_res = R.get bits 1 in
-    let spare = R.get bits 1 in
+    let split_screen_indicator = get_bool bits in
+    let document_camera_indicator = get_bool bits in
+    let freeze_picture_release = get_bool bits in
+    let source_format = if get_bool bits then Source_format.Cif else Source_format.Qcif in
+    let hi_res = get_bool bits in
+    let spare = get_bool bits in
     let picture_header = 
       Picture_header.({
         temporal_reference; split_screen_indicator; document_camera_indicator;
@@ -189,10 +191,6 @@ module Make(R : Bits.Reader) = struct
 
   module B = Bitstream(R)
 
-  let alloc_frame = function
-    | Source_format.Qcif -> Frame.U8.(make ~chroma:C420 ~w:176 ~h:144)
-    | Source_format.Cif -> Frame.U8.(make ~chroma:C420 ~w:352 ~h:288)
-
   module State = struct
     type t = 
       {
@@ -212,7 +210,7 @@ module Make(R : Bits.Reader) = struct
         mutable cbp : int;
         mutable quant : int;
         mutable cofs : Frame.SInt.Plane.t;
-        mutable mtype : Tables.Mtype.t;
+        mutable mtype : Mtype.t;
       }
     let init bits = 
       let open Picture_header in
@@ -238,7 +236,7 @@ module Make(R : Bits.Reader) = struct
   open State
 
   let read_mb_header s = 
-    let open Tables.Mtype in
+    let open Mtype in
     s.mbadiff <- (B.lookup_code s.bits B.mba).Tables.Mba.mba;
     s.mtype <- B.lookup_code s.bits B.mtype;
     s.quant <- if s.mtype.quant then R.get s.bits 5 else s.quant;
@@ -269,7 +267,7 @@ module Make(R : Bits.Reader) = struct
     | _ -> s.cur.v, s.ref.v,  8, 0, 0, s.mvx/2, s.mvy/2
 
   let rec decode_coefs s first pos =
-    let open Tables.Mtype in
+    let open Mtype in
     let eob, run, level = B.lookup_coef s.bits first s.mtype.intra in
     if not eob then begin
       (* skip run coefs *)
@@ -297,7 +295,7 @@ module Make(R : Bits.Reader) = struct
       copy_skipped_mbs s last
 
   let compute_mvs s x = 
-    let open Tables.Mtype in
+    let open Mtype in
     if x=0 || s.mbadiff <> 1 || not s.mtype.mvd then begin
       s.mvx <- get_mv 0 s.mvdx;
       s.mvy <- get_mv 0 s.mvdy
@@ -307,7 +305,7 @@ module Make(R : Bits.Reader) = struct
     end
 
   let update_mv_pred s = 
-    let open Tables.Mtype in
+    let open Mtype in
     if s.mtype.intra || not s.mtype.mvd then begin
       s.mvx <- 0;
       s.mvy <- 0
@@ -322,7 +320,7 @@ module Make(R : Bits.Reader) = struct
     done*)
 
   let decode_block s i x y = 
-    let open Tables.Mtype in
+    let open Mtype in
     let cur, ref, bs, ox, oy, mvx, mvy = get_block s i in
     let x, y = (x*bs) + ox, (y*bs) + oy in
     if s.cbp land (1 lsl (5-i)) = 0 then

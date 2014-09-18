@@ -8,17 +8,8 @@ module Mba : sig
 end
 
 module Mtype : sig
-  type t = 
-    {
-      intra : bool;
-      fil : bool;
-      quant : bool;
-      mvd : bool;
-      cbp : bool;
-      coef : bool;
-    } deriving(Show)
-  val codes : t Ovideo.Table.code list
-  val empty : t
+  val codes : Types.Mtype.t Ovideo.Table.code list
+  val empty : Types.Mtype.t
 end
 
 module Cbp : sig
