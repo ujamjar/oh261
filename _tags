@@ -5,6 +5,11 @@
 <lib_test/*.byte>: package(ovideo,deriving)
 <lib_test/*.native>: package(ovideo,deriving)
 
+<lib_test/oh261djs.ml>: syntax(camlp4o), package(js_of_ocaml,js_of_ocaml.syntax)
+<lib_test/oh261djs.byte>: package(ovideo,deriving,js_of_ocaml,js_of_ocaml.syntax)
+
 <lib>: include
 <lib_test>: include
-true: debug
+
+#true: debug
+#true: profile
