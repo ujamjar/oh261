@@ -1,6 +1,8 @@
 open Ovideo
 open Types
 
+val log_chan : out_channel ref
+
 module Bitstream(R : Bits.Reader) : sig
   val find_start_code : R.t -> unit
   val find_picture_start_code : R.t -> unit
@@ -45,8 +47,9 @@ module Make(R : Bits.Reader) : sig
         mutable mvdy : int;
         mutable cbp : int;
         mutable quant : int;
-        mutable cofs : Frame.SInt.Plane.t;
         mutable mtype : Mtype.t;
+        mutable block_iqnt : Frame.SInt.Plane.t;
+        mutable block_idct : Frame.SInt.Plane.t;
       }
     val init : R.t -> t
   end
@@ -57,7 +60,7 @@ module Make(R : Bits.Reader) : sig
     (Frame.U8.Plane.t * Frame.U8.Plane.t * int * int * int * int * int)
   val decode_coefs : State.t -> bool -> int -> unit
   val copy_skipped_mbs : State.t -> int -> unit
-  val compute_mvs : State.t -> int -> unit
+  val compute_mvs : State.t -> unit
   val update_mv_pred : State.t -> unit
   val decode_block : State.t -> int -> int -> int -> unit
   val decode_blocks : State.t -> int -> int -> unit

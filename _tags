@@ -1,7 +1,5 @@
-<lib/*.ml>: for-pack(Oh261), package(ovideo)
-<lib/*.mli>: package(ovideo)
-<lib/types.ml{,i}>: syntax(camlp4o), package(deriving)
-<lib/tables.ml{,i}>: syntax(camlp4o), package(deriving)
+<lib/*.ml{,i}>: syntax(camlp4o), for-pack(Oh261), package(ovideo), package(deriving), package(optcomp)
+<lib/*.ml>: for-pack(Oh261)
 
 <lib_test/*.ml>: package(ovideo)
 <lib_test/*.byte>: package(ovideo,deriving)

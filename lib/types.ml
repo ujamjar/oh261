@@ -50,7 +50,7 @@ module Mtype = struct
       mutable mvd : bool;
       mutable cbp : bool;
       mutable coef : bool;
-    } 
+    } deriving(Show) 
 end
 
 type 'a with_prev = 
@@ -87,5 +87,14 @@ let alloc_frame =
   function
   | Source_format.Qcif -> make ~chroma:C420 ~w:176 ~h:144
   | Source_format.Cif -> make ~chroma:C420 ~w:352 ~h:288
+
+(* logging utility *)
+let string_of_bits n v = 
+  let s = Bytes.create n in
+  for i=0 to n-1 do
+    if v land (1 lsl i) = 0 then Bytes.set s i '0'
+    else Bytes.set s i '1'
+  done;
+  Bytes.to_string s
 
 

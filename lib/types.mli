@@ -37,7 +37,7 @@ module Mtype : sig
       mutable mvd : bool;
       mutable cbp : bool;
       mutable coef : bool;
-    } 
+    } deriving(Show)
 end
 
 type 'a with_prev = 
@@ -57,3 +57,4 @@ val frame_dims : Source_format.t -> int * int
 val mb_to_pos : int -> int -> int * int
 val alloc_frame : Source_format.t -> Ovideo.Frame.U8.t
 
+val string_of_bits : int -> int -> string

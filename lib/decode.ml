@@ -1,5 +1,11 @@
+open Printf
 open Ovideo
 open Types
+
+#let_default log_level=0
+
+let log_chan = ref stderr
+let log s = (output_string !log_chan s; flush !log_chan)
 
 module Bitstream(R : Bits.Reader) = struct
 
@@ -71,14 +77,44 @@ module Bitstream(R : Bits.Reader) = struct
     match table.(code) with
     | None -> raise (No_valid_codeword (name, code))
     | Some(l,c) -> begin
+#if log_level>2 
+      log (sprintf "%5s: %i %s\n" name l (Types.string_of_bits l (code lsr (max_bits - l))));
+#endif
       R.advance bits l;
       c
     end
 
+#if log_level>2 
+  let lookup_code_coef bits table = 
+    let open Tables.Coef in
+    let coef = lookup_code bits table in
+    log (sprintf "eob=%b escape=%b run=%i level=%i\n" 
+      coef.eob coef.escape coef.run coef.level);
+    coef
+#else
+  let lookup_code_coef = lookup_code
+#endif
+
+  let intra_dc_coef bits = 
+    let dc = R.get bits 8 in
+    let dc = if dc = 255 then 128 else dc in
+#if log_level>2 
+    log (sprintf "intra_dc: %i\n" dc);
+#endif
+    (false, 0, dc)
+
+  let inter_first_coef bits = 
+    R.advance bits 1;
+    let sign = if R.get bits 1 = 0 then 1 else -1 in 
+#if log_level>2
+    log (sprintf "inter_first: %i\n" sign);
+#endif
+    (false, 0, sign)
+
   let lookup_coef bits first intra =
     let get_coef() =
       let open Tables.Coef in
-      let coef = lookup_code bits coef in
+      let coef = lookup_code_coef bits coef in
       if coef.eob then
         (true, 0, 0)
       else 
@@ -92,17 +128,10 @@ module Bitstream(R : Bits.Reader) = struct
           (coef.eob, coef.run, coef.level * sign)
     in
     if first then
-      if intra then
-        let dc = R.get bits 8 in
-        let dc = if dc = 255 then 128 else dc in
-        (false, 0, dc)
+      if intra then intra_dc_coef bits
       else
-        if R.show bits 1 = 1 then begin
-          R.advance bits 1;
-          let sign = if R.get bits 1 = 0 then 1 else -1 in 
-          (false, 0, sign)
-        end else
-          get_coef()
+        if R.show bits 1 = 1 then inter_first_coef bits
+        else get_coef()
     else
       get_coef()
 
@@ -125,10 +154,11 @@ module Recon = struct
   let clip x = max 0 (min 255 x)
 
   let copy ~x ~y ~ref ~cur = begin
-    Frame.U8.(Plane.blit ~x ~y ~w:16 ~h:16 ~dx:x ~dy:y ref.y cur.y);
+    let open Frame.U8 in
+    Plane.blit ~x ~y ~w:16 ~h:16 ~dx:x ~dy:y ref.y cur.y;
     let x,y = x/2, y/2 in
-    Frame.U8.(Plane.blit ~x ~y ~w:8 ~h:8 ~dx:x ~dy:y ref.u cur.u);
-    Frame.U8.(Plane.blit ~x ~y ~w:8 ~h:8 ~dx:x ~dy:y ref.v cur.v)
+    Plane.blit ~x ~y ~w:8 ~h:8 ~dx:x ~dy:y ref.u cur.u;
+    Plane.blit ~x ~y ~w:8 ~h:8 ~dx:x ~dy:y ref.v cur.v
   end
 
   let intra ~x ~y ~pred ~cur = 
@@ -209,8 +239,9 @@ module Make(R : Bits.Reader) = struct
         mutable mvdy : int;
         mutable cbp : int;
         mutable quant : int;
-        mutable cofs : Frame.SInt.Plane.t;
         mutable mtype : Mtype.t;
+        mutable block_iqnt : Frame.SInt.Plane.t;
+        mutable block_idct : Frame.SInt.Plane.t;
       }
     let init bits = 
       let open Picture_header in
@@ -228,8 +259,9 @@ module Make(R : Bits.Reader) = struct
         mvdy = 0;
         cbp = 0;
         quant = 0;
-        cofs = Frame.SInt.Plane.make ~w:8 ~h:8;
         mtype = Tables.Mtype.empty;
+        block_iqnt = Frame.SInt.Plane.make ~w:8 ~h:8;
+        block_idct = Frame.SInt.Plane.make ~w:8 ~h:8;
       }
   end
 
@@ -275,10 +307,10 @@ module Make(R : Bits.Reader) = struct
       assert (pos < 64);
       begin
         (* inverse zigzag / quantise coef *)
-        if pos = 0 && s.mtype.intra then s.cofs.{0,0} <- level * 8
+        if pos = 0 && s.mtype.intra then s.block_iqnt.{0,0} <- level * 8
         else 
           let zx,zy = Zigzag.inv2d.(pos) in
-          s.cofs.{zy,zx} <- Quant.inv s.quant level
+          s.block_iqnt.{zy,zx} <- Quant.inv s.quant level
       end;
       decode_coefs s false (pos+1)
     end
@@ -289,14 +321,13 @@ module Make(R : Bits.Reader) = struct
     if s.mba >= last then ()
     else
       let x,y = mb_to_pos s.gob_header.Gob_header.group_number s.mba in
-      let () = Printf.eprintf "skip %i %i [%i,%i]\n" s.mba 
-        s.gob_header.Gob_header.group_number x y in
       Recon.copy ~x:(x*16) ~y:(y*16) ~ref:s.ref ~cur:s.cur;
       copy_skipped_mbs s last
 
-  let compute_mvs s x = 
+  let compute_mvs s = 
     let open Mtype in
-    if x=0 || s.mbadiff <> 1 || not s.mtype.mvd then begin
+    let left_of_gob = s.mba=1 || s.mba=12 || s.mba=23 in
+    if left_of_gob || s.mbadiff <> 1 || not s.mtype.mvd then begin
       s.mvx <- get_mv 0 s.mvdx;
       s.mvy <- get_mv 0 s.mvdy
     end else begin
@@ -311,14 +342,6 @@ module Make(R : Bits.Reader) = struct
       s.mvy <- 0
     end
 
-  (*let dump d = 
-    for j=0 to 7 do
-      for i=0 to 7 do
-        Printf.eprintf "%6i " d.{j,i}
-      done;
-      Printf.eprintf "\n"
-    done*)
-
   let decode_block s i x y = 
     let open Mtype in
     let cur, ref, bs, ox, oy, mvx, mvy = get_block s i in
@@ -326,17 +349,15 @@ module Make(R : Bits.Reader) = struct
     if s.cbp land (1 lsl (5-i)) = 0 then
       Recon.skip ~x ~y ~mvx ~mvy ~cur ~ref
     else begin
-      Frame.SInt.Plane.clear s.cofs 0;
+      Frame.SInt.Plane.clear s.block_iqnt 0;
       decode_coefs s true 0;
-      (*dump s.cofs;*)
-      Dct.Chen.idct s.cofs s.cofs;
-      (*dump s.cofs;*)
+      Dct.Chen.idct s.block_iqnt s.block_idct;
       if s.mtype.intra then 
-        Recon.intra ~x ~y ~pred:s.cofs ~cur
+        Recon.intra ~x ~y ~pred:s.block_idct ~cur
       else if s.mtype.fil then
-        Recon.fil ~x ~y ~mvx ~mvy ~pred:s.cofs ~ref ~cur
+        Recon.fil ~x ~y ~mvx ~mvy ~pred:s.block_idct ~ref ~cur
       else
-        Recon.mc ~x ~y ~mvx ~mvy ~pred:s.cofs ~ref ~cur
+        Recon.mc ~x ~y ~mvx ~mvy ~pred:s.block_idct ~ref ~cur
     end
 
   let decode_blocks s x y = 
@@ -347,21 +368,66 @@ module Make(R : Bits.Reader) = struct
       end
     in b 0
 
+#if log_level>2
+  let log_si_plane p = 
+    let open Frame.SInt.Plane in
+    for y=0 to height p - 1 do
+      for x=0 to width p - 1 do
+        log (sprintf "%-6i " p.{y,x})
+      done;
+      log ("\n")
+    done
+  let log_u8_plane p = 
+    let open Frame.SInt.Plane in
+    for y=0 to height p - 1 do
+      for x=0 to width p - 1 do
+        log (sprintf "%-3i " p.{y,x})
+      done;
+      log ("\n")
+    done
+#endif
+
+#if log_level>1
+  let log_mb_header s = 
+    let x, y = mb_to_pos s.gob_header.Gob_header.group_number (s.mba+s.mbadiff) in
+    let () = 
+      log ("-------------------------------------------------------\n");
+      log (sprintf "mb addr=[%i=%i+%i] [%i,%i] @ %i\n" 
+        (s.mba+s.mbadiff) s.mba s.mbadiff
+        x y (R.pos s.bits));
+      log (sprintf "mtype=%s\n" (Types.Mtype.Show_t.show s.mtype));
+      log (sprintf "quant=%i cbp=%i mv=[%i,%i] mvd=[%i,%i]\n" 
+        s.quant s.cbp s.mvx s.mvy s.mvdx s.mvdy);
+      log ("-------------------------------------------------------\n")
+    in ()
+#endif
+#if log_level>2 
+  let log_mb_data s = 
+    let () = 
+      log_si_plane s.block_iqnt;
+      log ("-------------------------------------------------------\n");
+      log_si_plane s.block_idct;
+      log ("-------------------------------------------------------\n")
+    in
+    ()
+#endif
+
   let decode_mb s = 
     (* decode the mb header *)
     read_mb_header s;
+#if log_level>1
+    log_mb_header s;
+#endif
     (* copy skipped mbs *)
     copy_skipped_mbs s (s.mba + s.mbadiff);
     (* get mb position *)
     let x, y = mb_to_pos s.gob_header.Gob_header.group_number s.mba in
-    (*Printf.eprintf "[%i,%i] gob=%i mb=%i\n" x y 
-      s.gob_header.Gob_header.group_number s.mba;
-    Printf.eprintf "  mtype=%s\n" 
-      (Tables.Mtype.Show_t.show s.mtype);*)
-    (* compute motion vectors *)
-    compute_mvs s x;
+    compute_mvs s;
     (* decode each block *)
     decode_blocks s x y;
+#if log_level>2
+    log_mb_data s;
+#endif
     (* update the mv predictors *)
     update_mv_pred s
 
@@ -379,12 +445,18 @@ module Make(R : Bits.Reader) = struct
     let cur = s.cur in
     s.cur <- s.ref;
     s.ref <- cur 
-
+    
   let decode_picture s = 
     let open Gob_header in
     B.find_picture_start_code s.bits;
     s.picture_header <- B.read_picture_header s.bits;
-    (*Printf.eprintf "picture_header= = %s\n" (Picture_header.Show_t.show s.picture_header);*)
+#if log_level>0
+    log ("*******************************************************\n");
+    log (sprintf "picture_header @ %i\n%s\n" 
+      (R.pos s.bits)
+      (Picture_header.Show_t.show s.picture_header));
+    log ("*******************************************************\n");
+#endif
     config_frame s;
     s.gob_header <- { group_number=0; gob_quant=8 }; (* default header *)
     swap s;
@@ -401,7 +473,13 @@ module Make(R : Bits.Reader) = struct
         (* GSC *)
         complete_gob (); (* complete previous gob *)
         s.gob_header <- B.read_gob_header s.bits;
-        (*Printf.eprintf "gob_header = %s\n" (Gob_header.Show_t.show s.gob_header);*)
+#if log_level>0
+        log ("+++++++++++++++++++++++++++++++++++++++++++++++++++++++\n");
+        log (sprintf "gob_header @ %i\n%s\n" 
+          (R.pos s.bits)
+          (Gob_header.Show_t.show s.gob_header));
+        log ("+++++++++++++++++++++++++++++++++++++++++++++++++++++++\n");
+#endif
         s.quant <- s.gob_header.gob_quant;
         s.mba <- 0;
         loop();
