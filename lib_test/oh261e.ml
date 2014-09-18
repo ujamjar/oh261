@@ -10,32 +10,25 @@ module H261 = Oh261.Encode.Make(W)(Me)
 module F = Ovideo.Frame.U8
 module P = F.Plane
 
-let bits = W.init (Buffer.create 1024)
+let buffer = Buffer.create (1024*100)
+let bits = W.init buffer
 let h261 = H261.State.init bits source_format
 
 let read_frame () = 
-  for y=0 to h-1 do
-    for x=0 to w-1 do
-      h261.H261.State.inp.F.y.{y,x} <- input_byte stdin
-    done
-  done;
-  for y=0 to h/2-1 do
-    for x=0 to w/2-1 do
-      h261.H261.State.inp.F.u.{y,x} <- input_byte stdin
-    done
-  done;
-  for y=0 to h/2-1 do
-    for x=0 to w/2-1 do
-      h261.H261.State.inp.F.v.{y,x} <- input_byte stdin
-    done
-  done
+  ignore (P.map_na (fun _ -> input_byte stdin) h261.H261.State.cur.F.y);
+  ignore (P.map_na (fun _ -> input_byte stdin) h261.H261.State.cur.F.u);
+  ignore (P.map_na (fun _ -> input_byte stdin) h261.H261.State.cur.F.v)
 
 let () = 
   let frameno = ref 0 in
-  while true do
-    read_frame ();
-    H261.encode_intra_picture h261;
-    eprintf "encode_intra_picture %i bits %i\n" !frameno (W.pos bits);
-    incr frameno;
-  done
+  try
+    while true do
+      read_frame ();
+      H261.encode_intra_picture h261;
+      eprintf "encode_intra_picture %i bits %i\n%!" !frameno (W.pos bits);
+      incr frameno;
+    done
+  with End_of_file ->
+      let s = Buffer.contents buffer in
+      output_string stdout s
 

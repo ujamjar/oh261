@@ -5,6 +5,7 @@
 
 <lib_test/*.ml>: package(ovideo)
 <lib_test/*.byte>: package(ovideo,deriving)
+<lib_test/*.native>: package(ovideo,deriving)
 
 <lib>: include
 <lib_test>: include

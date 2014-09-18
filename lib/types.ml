@@ -53,6 +53,18 @@ module Mtype = struct
     } 
 end
 
+type 'a with_prev = 
+  {
+    mutable prev : 'a;
+    mutable cur : 'a;
+  }
+
+type 'a mv = 
+  {
+    mvx : 'a;
+    mvy : 'a;
+  }
+
 let num_gobs = function
   | Source_format.Qcif -> 3
   | Source_format.Cif -> 12

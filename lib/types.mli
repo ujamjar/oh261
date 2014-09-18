@@ -40,6 +40,18 @@ module Mtype : sig
     } 
 end
 
+type 'a with_prev = 
+  {
+    mutable prev : 'a;
+    mutable cur : 'a;
+  }
+
+type 'a mv = 
+  {
+    mvx : 'a;
+    mvy : 'a;
+  }
+
 val num_gobs : Source_format.t -> int
 val frame_dims : Source_format.t -> int * int
 val mb_to_pos : int -> int -> int * int

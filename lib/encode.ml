@@ -63,9 +63,9 @@ module Bitstream(W : Bits.Writer) = struct
     W.put bits mba.length mba.code
 
   let write_coef bits run level = 
-    if run <= 26 && Array.length coef_table.(run) <= level then
-      let sign = level < 0 in
-      let level = abs level in
+    let sign = level < 0 in
+    let level = abs level in
+    if run <= 26 && level <= Array.length coef_table.(run) then
       let coef = coef_table.(run).(level-1) in
       W.put bits coef.length coef.code;
       W.put bits 1 (if sign then 0 else 1)
@@ -143,11 +143,6 @@ module Make(W : Bits.Writer)(Me : Motion.Estimator) = struct
   module U8p = U8.Plane
 
   module State = struct
-    type 'a with_prev = 
-      {
-        mutable prev : 'a;
-        mutable cur : 'a;
-      }
     type t = 
       {
         mutable bits : W.t;
@@ -258,7 +253,7 @@ module Make(W : Bits.Writer)(Me : Motion.Estimator) = struct
     write_mb_header s;
     (* encode *)
     for i=0 to 5 do
-      let inp, cur, _, ox, oy, bs = get_block s i in
+      let inp, cur, _, bs, ox, oy = get_block s i in
       Sip.blit ~x:(x*bs+ox) ~y:(y*bs+oy) ~w:8 ~h:8 ~dx:0 ~dy:0 inp s.block_cur.(i);
       (* dct and quant *)
       Dct.Chen.fdct s.block_cur.(i) s.block_dct.(i);
@@ -268,7 +263,7 @@ module Make(W : Bits.Writer)(Me : Motion.Estimator) = struct
       let rle = rle true s.block_qnt.(i) in
       write_block_vlc s.bits false rle;
       (* reconstruct *)
-      U8p.blit ~x:(x*bs+ox) ~y:(y*bs+oy) ~w:8 ~h:8 ~dx:0 ~dy:0 s.block_cur.(i) cur;
+      U8p.blit ~x:0 ~y:0 ~w:8 ~h:8 ~dx:(x*bs+ox) ~dy:(y*bs+oy) s.block_cur.(i) cur;
     done
 
   let encode_inter_mb s mbno = 

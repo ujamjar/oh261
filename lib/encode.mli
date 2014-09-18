@@ -2,6 +2,12 @@ open Ovideo
 open Types
 
 module Bitstream(W : Bits.Writer) : sig
+  
+  val mba_table : Tables.Mba.t Table.code array
+  val coef_table : Tables.Coef.t Table.code array array
+  val mvd_table : Tables.Mvd.t Table.code array
+  val cbp_table : Tables.Cbp.t Table.code array
+
   val write_start_code : W.t -> int -> unit
   val write_picture_start_code : W.t -> unit
   val write_picture_header : W.t -> Picture_header.t -> unit
@@ -18,11 +24,6 @@ end
 module Make(W : Bits.Writer)(Me : Motion.Estimator) : sig
 
   module State : sig
-    type 'a with_prev = 
-      {
-        mutable prev : 'a;
-        mutable cur : 'a;
-      }
     type t = 
       {
         mutable bits : W.t;
