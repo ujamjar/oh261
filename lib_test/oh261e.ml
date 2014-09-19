@@ -1,6 +1,27 @@
 open Printf
 
-let source_format = Oh261.Types.Source_format.Qcif
+let in_file = ref "-"
+let bits_file = ref "-"
+let rec_file = ref ""
+let quant = ref 0
+let source_format = ref Oh261.Types.Source_format.Qcif
+
+let set_size = function
+  | "qcif" -> source_format := Oh261.Types.Source_format.Qcif
+  | "cif" -> source_format := Oh261.Types.Source_format.Cif
+  | _ -> failwith "expected size is 'qcif' or 'cif'"
+
+let () = 
+  Arg.parse [ 
+    "-i", Arg.Set_string in_file, "input yuv file [stdin]";
+    "-o", Arg.Set_string bits_file, "output bitstream [stdout]";
+    "-s", Arg.String(set_size), "cif or qcif";
+    "-rec", Arg.Set_string rec_file, "reconstructed yuv file [none]";
+    "-q", Arg.Set_int quant, "quantiser";
+  ]
+  (fun _ -> failwith "invalid anon argument")
+  (Sys.argv.(0) ^ " - h261 video encoder")
+
 let w,h = Oh261.Types.frame_dims source_format
 
 module Sink = Ovideo.Bits.Buffer_sink
