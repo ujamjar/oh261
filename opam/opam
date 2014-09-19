@@ -5,6 +5,7 @@ build: [
   [ make "all" ]
 ]
 depends: [
+  "deriving"
   "optcomp"
   "ovideo"
 ]

@@ -1,6 +1,6 @@
 version = "0.1.0"
 description = "H.261 Video Decoder"
-requires = "ovideo"
+requires = "deriving,ovideo"
 archive(byte) = "oh261.cma"
 archive(native) = "oh261.cmxa"
 
