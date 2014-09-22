@@ -22,7 +22,7 @@ let () =
   (fun _ -> failwith "invalid anon argument")
   (Sys.argv.(0) ^ " - h261 video encoder")
 
-let w,h = Oh261.Types.frame_dims source_format
+let w,h = Oh261.Types.frame_dims !source_format
 
 module Sink = Ovideo.Bits.Buffer_sink
 module W = Ovideo.Bits.Writer(Sink)
@@ -33,7 +33,7 @@ module P = F.Plane
 
 let buffer = Buffer.create (1024*100)
 let bits = W.init buffer
-let h261 = H261.State.init bits source_format
+let h261 = H261.State.init bits !source_format
 
 let read_frame () = 
   ignore (P.map_na (fun _ -> input_byte stdin) h261.H261.State.cur.F.y);
